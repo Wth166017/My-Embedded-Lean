@@ -5,6 +5,7 @@ void Encoder_Init(void)
 {
 		RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB,ENABLE);
 		RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO,ENABLE);
+	
 		GPIO_InitTypeDef GPIO_IniStructure;
 		GPIO_IniStructure.GPIO_Mode=GPIO_Mode_IPU;
 		GPIO_IniStructure.GPIO_Pin=GPIO_Pin_0 |GPIO_Pin_1;
@@ -13,6 +14,7 @@ void Encoder_Init(void)
 		
 		GPIO_EXTILineConfig( GPIO_PortSourceGPIOB,GPIO_PinSource0);
 		GPIO_EXTILineConfig( GPIO_PortSourceGPIOB,GPIO_PinSource1);
+		
 		EXTI_InitTypeDef EXTI_InitStructure;
 		EXTI_InitStructure.EXTI_Line = EXTI_Line0|EXTI_Line1;
 		EXTI_InitStructure.EXTI_LineCmd =ENABLE;
