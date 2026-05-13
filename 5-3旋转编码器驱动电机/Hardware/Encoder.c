@@ -17,7 +17,7 @@ void Encoder_Init(void)
 	EXTI_InitStructure.EXTI_Line = EXTI_Line0 | EXTI_Line1;
 	EXTI_InitStructure.EXTI_LineCmd =ENABLE;
 	EXTI_InitStructure.EXTI_Mode =EXTI_Mode_Interrupt;
-	EXTI_InitStructure.EXTI_Trigger =EXTI_Trigger_Falling;
+	EXTI_InitStructure.EXTI_Trigger =EXTI_Trigger_Rising_Falling;
 	EXTI_Init(&EXTI_InitStructure);
 	
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
@@ -49,7 +49,7 @@ void EXTI0_IRQHandler(void)
 		if(EXTI_GetFlagStatus(EXTI_Line0)==SET)
 	{	
 		
-	if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_1) == 0)
+	if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_1) == 1)
 		{
 			Encoder_Count--;
 		}
@@ -61,7 +61,7 @@ void EXTI1_IRQHandler(void)
 	
 	if(EXTI_GetFlagStatus(EXTI_Line1)==SET)
 	{	
-		if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_0) == 0)
+		if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_0) == 1)
 		{
 			Encoder_Count++;
 		}

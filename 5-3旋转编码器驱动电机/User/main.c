@@ -3,9 +3,7 @@
 #include "OLED.h"
 #include "Motor.h"
 #include "Encoder.h"
-
-int16_t Speed=0;
-
+int16_t speed;
 int main(void)
 {
 	OLED_Init();
@@ -16,14 +14,10 @@ int main(void)
 	
 	while(1)
 	{
-		int16_t delta = Encoder_Get();
-        Speed += delta;
 		
-        if (Speed > 100) Speed = 100;
-        if (Speed < -100)   Speed = -100;
-
-       
-		Motor_SetSpeed(Speed); 
-		OLED_ShowNum(1,7,Speed,3);
+        speed += Encoder_Get();
+		
+		Motor_SetSpeed(speed); 
+		OLED_ShowSignedNum(1,7,speed,3);
 	}	
 }
