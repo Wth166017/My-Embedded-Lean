@@ -1,0 +1,20 @@
+#include "stm32f10x.h"
+#include "Delay.h"
+#include "OLED.h"
+#include "Timer.h"
+#include "Encoder.h"
+
+int16_t Speed;
+
+int main(void)
+{
+	OLED_Init();
+	Encoder_Init();
+    Timer_Init();
+	OLED_ShowString(1,1,"Speed:");
+	
+	while(1)
+    {
+		OLED_ShowSignedNum(1,7,Speed,5);	
+	}
+}
