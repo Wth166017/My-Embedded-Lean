@@ -1,0 +1,149 @@
+# USART1串口接收完整数据流（一步一步完整走通）
+硬件场景：电脑串口助手发送1字节数据，STM32接收。
+> 核心角色：串口外设硬件 → 中断服务函数(USART1_IRQHandler) → 全局变量`Serial_RxData`、`Serial_RxFlag` → main主循环调用`Serial_GetRxFlag()`、`Serial_GetRxData()`
+
+## 前提条件（已经完成）
+1. `Serial_Init()`执行完毕：开启USART1、GPIO，开启**RXNE接收中断**，配置NVIC，串口使能。
+2. CPU正在跑main函数的`while(1)`死循环。
+
+全局变量初始状态：
+```c
+uint8_t Serial_RxData = 0;   //接收数据缓存
+uint8_t Serial_RxFlag = 0;   //接收标志，0=无新数据
+```
+
+---
+
+## 第1步：电脑发送字节，硬件层接收
+电脑通过USB转串口，发送1字节，例如：`0xA3`
+字节通过导线进到STM32的 **PA10(RX引脚)**。
+
+USART硬件内部移位寄存器，把串行比特流组装成1字节，存入**接收数据寄存器DR**。
+硬件自动置位 `RXNE`（接收寄存器非空）标志：**代表收到1个新字节**。
+
+因为我们开启了`USART_IT_RXNE`中断，**硬件立刻触发中断请求**。
+
+> ⚠️此时main循环会被打断，CPU暂停正在执行的main代码，跳去执行中断服务函数。
+
+## 第2步：进入中断服务函数 `USART1_IRQHandler(void)`
+```c
+void USART1_IRQHandler(void)
+{
+    if (USART_GetITStatus(USART1, USART_IT_RXNE) == SET)
+    {
+        //①读取硬件寄存器，取出收到的0xA3
+        Serial_RxData = USART_ReceiveData(USART1);
+
+        //②打标记：告诉主循环，我收到新数据了
+        Serial_RxFlag = 1;
+
+        //③读取DR之后硬件自动清除RXNE标志，这行写不写都可以
+        USART_ClearITPendingBit(USART1, USART_IT_RXNE);
+    }
+}
+```
+中断函数就干两件极简的事：
+1. 把硬件寄存器的字节拷贝到全局变量`Serial_RxData`
+2. 将`Serial_RxFlag = 1`
+
+> ✅中断原则：中断里绝不做打印、延时、复杂运算，只做**保存数据+置标志**。
+中断执行速度极快，执行完，退出中断，**回到main函数，继续跑while(1)**。
+
+现在全局变量状态：
+```
+Serial_RxData = 0xA3
+Serial_RxFlag = 1
+```
+
+## 第3步：回到main主循环，轮询查询标志位
+main里面代码：
+```c
+while(1)
+{
+    if( Serial_GetRxFlag() == 1 )
+    {
+        uint8_t rec = Serial_GetRxData();
+        Serial_Printf("收到 = %02X\r\n", rec);
+    }
+}
+```
+
+### 调用 `Serial_GetRxFlag()`
+```c
+uint8_t Serial_GetRxFlag(void)
+{
+    if (Serial_RxFlag == 1)
+    {
+        Serial_RxFlag = 0;   //自动清零标志！重点！
+        return 1;
+    }
+    return 0;
+}
+```
+- 判断`Serial_RxFlag == 1`成立
+- **把全局的Serial_RxFlag清零变成0**
+- 返回`return 1` → if条件成立，进入大括号内部
+
+此时全局变量状态：
+```
+Serial_RxData = 0xA3  //数据还保留
+Serial_RxFlag = 0     //标志已经清零
+```
+
+## 第4步：调用`Serial_GetRxData()`读取数据
+```c
+uint8_t Serial_GetRxData(void)
+{
+    return Serial_RxData;
+}
+```
+函数直接返回`0xA3`，main拿到这个字节，你可以打印、判断、处理数据。
+
+> 注意：`Serial_GetRxData()`**只返回数据，不改动任何标志位**。
+
+## 第5轮：下一次while循环
+再次执行`Serial_GetRxFlag()`
+`Serial_RxFlag`现在是0，直接返回0，if不进入。
+不会重复处理上一次`0xA3`旧数据。
+
+> 只有电脑再次发送新字节，中断才会再把`Serial_RxFlag=1`。
+
+---
+
+# 完整时序总览（时间从上往下）
+1. 电脑发送字节 → PA10引脚接收 → USART硬件收到字节，置RXNE，触发中断
+2. CPU暂停main，跳进中断`USART1_IRQHandler`
+3. 中断：`Serial_RxData = 收到字节`；`Serial_RxFlag = 1`；退出中断
+4. CPU回到main while(1)
+5. main调用`Serial_GetRxFlag()`：检测Flag=1，**把Flag清0，返回1**
+6. if条件成立，调用`Serial_GetRxData()`拿到字节，做业务处理
+7. 后续循环`Serial_GetRxFlag()`返回0，等待下一包数据
+
+---
+
+# 容易踩坑的关键点
+1. **为什么要分开两个变量？**
+`Serial_RxData`存内容；`Serial_RxFlag`用来区分：这个数据是**新收到的**，还是上次处理过的旧数据。
+如果没有Flag，你永远分不清变量里面的值是不是新的。
+
+2. 为什么不在中断里面直接处理、打印？
+中断优先级高，如果中断里面执行打印（发送串口，会阻塞等待），会造成系统卡顿，甚至丢失后面新到来字节。
+> 标准范式：**中断只管采集打标记；业务逻辑全部放到主循环**。
+
+3. 这套代码的短板
+> 如果电脑高速连续发多个字节，新字节到来会直接覆盖掉`Serial_RxData`，会丢数据。
+因为只有1字节缓存，没有FIFO环形缓冲区。适合低速单字节交互。
+
+# 错误流程演示（错误写法）
+```c
+while(1)
+{
+    uint8_t rec = Serial_GetRxData(); //直接读数据，不判断标志
+}
+```
+哪怕没有新数据到来，`Serial_RxData`一直保存上次的值，程序会不停拿到旧数据，逻辑完全错误。
+
+# 极简记忆口诀
+> 硬件收数据 → 中断存数据，打Flag=1
+> main查GetRxFlag，返回1代表有新货，同时把Flag清掉
+> 再调用GetRxData拿到字节干活。
